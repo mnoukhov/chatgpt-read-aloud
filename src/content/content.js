@@ -5,15 +5,45 @@
   const stopSVG = '<path d="M10 2.08496C14.3713 2.08496 17.915 5.62867 17.915 10C17.915 14.3713 14.3713 17.915 10 17.915C5.62867 17.915 2.08496 14.3713 2.08496 10C2.08496 5.62867 5.62867 2.08496 10 2.08496ZM8.25 7.25C7.69772 7.25 7.25 7.69772 7.25 8.25V11.75C7.25 12.3023 7.69772 12.75 8.25 12.75H11.75C12.3023 12.75 12.75 12.3023 12.75 11.75V8.25C12.75 7.69772 12.3023 7.25 11.75 7.25H8.25Z"></path>';
   const pauseSVG = '<path d="M10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 6.13401 13.866 3 10 3ZM9 13H7V7H9V13ZM13 13H11V7H13V13Z"></path>';
   const STORAGE_KEY = 'autoPlayEnabled';
+  const HIDE_FEEDBACK_STORAGE_KEY = 'hideFeedbackButtonsEnabled';
   const hasStorage = typeof chrome !== 'undefined' && chrome?.storage?.sync;
   let autoPlayEnabled = false;
+  let autoPlayArmedForNewResponses = false;
+  let hideFeedbackButtonsEnabled = false;
 
   function hideFeedbackButtons() {
+    if (!hideFeedbackButtonsEnabled) {
+      return;
+    }
+
     const goodResponseButtons = document.querySelectorAll('button[aria-label="Good response"]');
     const badResponseButtons = document.querySelectorAll('button[aria-label="Bad response"]');
 
-    goodResponseButtons.forEach(button => button.style.display = 'none');
-    badResponseButtons.forEach(button => button.style.display = 'none');
+    goodResponseButtons.forEach((button) => {
+      button.dataset.readAloudFeedbackHidden = 'true';
+      button.style.display = 'none';
+    });
+    badResponseButtons.forEach((button) => {
+      button.dataset.readAloudFeedbackHidden = 'true';
+      button.style.display = 'none';
+    });
+  }
+
+  function restoreFeedbackButtons() {
+    const hiddenFeedbackButtons = document.querySelectorAll('button[data-read-aloud-feedback-hidden="true"]');
+    hiddenFeedbackButtons.forEach((button) => {
+      button.style.removeProperty('display');
+      delete button.dataset.readAloudFeedbackHidden;
+    });
+  }
+
+  function setHideFeedbackButtonsEnabled(value) {
+    hideFeedbackButtonsEnabled = Boolean(value);
+    if (hideFeedbackButtonsEnabled) {
+      hideFeedbackButtons();
+    } else {
+      restoreFeedbackButtons();
+    }
   }
 
   function triggerAutoPlayForButton(proxyButton) {
@@ -31,6 +61,7 @@
     }
 
     proxyButton.dataset.autoPlayTriggered = 'true';
+    autoPlayArmedForNewResponses = false;
 
     setTimeout(() => {
       if (proxyButton.isConnected && autoPlayEnabled) {
@@ -46,7 +77,11 @@
 
     const proxyButtons = document.querySelectorAll('button[data-read-aloud-proxy="true"]');
     for (const button of proxyButtons) {
-      if (button.dataset.autoPlayTriggered !== 'true' && button.getAttribute('aria-label') === 'Read Aloud') {
+      if (
+        button.dataset.autoPlayTriggered !== 'true' &&
+        button.dataset.autoPlayEligible === 'true' &&
+        button.getAttribute('aria-label') === 'Read Aloud'
+      ) {
         triggerAutoPlayForButton(button);
         break;
       }
@@ -90,15 +125,41 @@
       return;
     }
 
-    chrome.storage.sync.get({ [STORAGE_KEY]: false }, (result) => {
+    chrome.storage.sync.get({ [STORAGE_KEY]: false, [HIDE_FEEDBACK_STORAGE_KEY]: false }, (result) => {
       setAutoPlayEnabled(result[STORAGE_KEY]);
+      setHideFeedbackButtonsEnabled(result[HIDE_FEEDBACK_STORAGE_KEY]);
     });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'sync' && Object.prototype.hasOwnProperty.call(changes, STORAGE_KEY)) {
         setAutoPlayEnabled(changes[STORAGE_KEY].newValue);
       }
+
+      if (areaName === 'sync' && Object.prototype.hasOwnProperty.call(changes, HIDE_FEEDBACK_STORAGE_KEY)) {
+        setHideFeedbackButtonsEnabled(changes[HIDE_FEEDBACK_STORAGE_KEY].newValue);
+      }
     });
+  }
+
+  function isInComposer(target) {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(target.closest('textarea, [contenteditable="true"]'));
+  }
+
+  function isSendButton(target) {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    const sendButton = target.closest('button[aria-label*="Send"], button[data-testid*="send"]');
+    return Boolean(sendButton && !sendButton.disabled && sendButton.getAttribute('aria-disabled') !== 'true');
+  }
+
+  function armAutoPlayForNewResponses() {
+    autoPlayArmedForNewResponses = true;
   }
 
   function temporarilyHideMenu() {
@@ -160,7 +221,7 @@
       proxyButton.setAttribute('aria-label', 'Read Aloud');
       proxyButton.dataset.readAloudProxy = 'true';
       proxyButton.dataset.autoPlayTriggered = 'false';
-      proxyButton.dataset.autoPlayEligible = 'true';
+      proxyButton.dataset.autoPlayEligible = autoPlayArmedForNewResponses ? 'true' : 'false';
       
       const icon = proxyButton.querySelector('svg');
       if (icon) {
@@ -172,9 +233,12 @@
           event.stopPropagation();
 
           const currentState = proxyButton.getAttribute('aria-label');
-          const pointerDownEvent = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window });
-          const pointerUpEvent = new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window });
           let restoreMenuStyles = null;
+
+          const openMenu = () => {
+            specificMoreActionsButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+            specificMoreActionsButton.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
+          };
 
           const scheduleMenuHide = () => {
             if (!restoreMenuStyles) {
@@ -193,15 +257,18 @@
           };
 
           if (currentState === 'Read Aloud') {
-            specificMoreActionsButton.dispatchEvent(pointerDownEvent);
-            specificMoreActionsButton.dispatchEvent(pointerUpEvent);
-
-            requestAnimationFrame(scheduleMenuHide);
-            setTimeout(scheduleMenuHide, 100);
-
-            setTimeout(() => {
+            openMenu();
+            
+            requestAnimationFrame(() => {
               scheduleMenuHide();
-              const realReadAloudButton = document.querySelector('div[role="menuitem"][aria-label="Read aloud"], div[role="menuitem"][aria-label="Loading"]');
+              setTimeout(scheduleMenuHide, 50);
+            });
+
+            const clickReadAloudWhenReady = (attemptsRemaining) => {
+              scheduleMenuHide();
+              // Old selector kept for rollback reference; clicking "Loading" can mark playback as stopped/started incorrectly.
+              // const realReadAloudButton = document.querySelector('div[role="menuitem"][aria-label="Read aloud"], div[role="menuitem"][aria-label="Loading"]');
+              const realReadAloudButton = document.querySelector('div[role="menuitem"][aria-label="Read aloud"]');
               if (realReadAloudButton) {
                 realReadAloudButton.click();
                 proxyButton.setAttribute('aria-label', 'Stop');
@@ -209,20 +276,25 @@
                 if (icon) {
                   icon.innerHTML = stopSVG;
                 }
-                // Close the menu
-                specificMoreActionsButton.dispatchEvent(pointerDownEvent);
-                specificMoreActionsButton.dispatchEvent(pointerUpEvent);
-                runRestoreMenu();
+                openMenu();
+                setTimeout(runRestoreMenu, 100);
               } else {
-                runRestoreMenu();
+                if (attemptsRemaining > 0) {
+                  setTimeout(() => clickReadAloudWhenReady(attemptsRemaining - 1), 200);
+                } else {
+                  runRestoreMenu();
+                }
               }
-            }, 500);
-          } else {
-            specificMoreActionsButton.dispatchEvent(pointerDownEvent);
-            specificMoreActionsButton.dispatchEvent(pointerUpEvent);
+            };
 
-            requestAnimationFrame(scheduleMenuHide);
-            setTimeout(scheduleMenuHide, 100);
+            setTimeout(() => clickReadAloudWhenReady(5), 300);
+          } else {
+            openMenu();
+            
+            requestAnimationFrame(() => {
+              scheduleMenuHide();
+              setTimeout(scheduleMenuHide, 50);
+            });
 
             setTimeout(() => {
               scheduleMenuHide();
@@ -231,14 +303,12 @@
                 stopButton.click();
                 resetProxyButtonAppearance(proxyButton);
                 proxyButton.dataset.autoPlayEligible = 'false';
-                // Close the menu
-                specificMoreActionsButton.dispatchEvent(pointerDownEvent);
-                specificMoreActionsButton.dispatchEvent(pointerUpEvent);
-                runRestoreMenu();
+                openMenu();
+                setTimeout(runRestoreMenu, 100);
               } else {
                 runRestoreMenu();
               }
-            }, 500);
+            }, 300);
           }
         });
       })(moreActionsButton);
@@ -251,18 +321,41 @@
     }
   }
 
+  let mutationTimer;
   const observer = new MutationObserver(() => {
-    setTimeout(createProxyButton, 300);
-    setTimeout(hideFeedbackButtons, 300);
-    if (autoPlayEnabled) {
-      setTimeout(triggerAutoPlayForExisting, 300);
-    }
+    clearTimeout(mutationTimer);
+    mutationTimer = setTimeout(() => {
+      createProxyButton();
+      hideFeedbackButtons();
+      if (autoPlayEnabled) {
+        triggerAutoPlayForExisting();
+      }
+    }, 150);
   });
 
   document.addEventListener('ended', (event) => {
     const target = event.target;
     if (target instanceof HTMLAudioElement) {
       resetAllProxyButtons();
+    }
+  }, true);
+
+  document.addEventListener('keydown', (event) => {
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      isInComposer(event.target)
+    ) {
+      armAutoPlayForNewResponses();
+    }
+  }, true);
+
+  document.addEventListener('pointerdown', (event) => {
+    if (isSendButton(event.target)) {
+      armAutoPlayForNewResponses();
     }
   }, true);
 
@@ -279,7 +372,9 @@
   });
 
   initializeAutoPlaySetting();
-  setTimeout(createProxyButton, 1000);
-  setTimeout(hideFeedbackButtons, 1000);
+  setTimeout(() => {
+    createProxyButton();
+    hideFeedbackButtons();
+  }, 500);
 
 })();

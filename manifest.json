@@ -4,8 +4,6 @@
   "version": "1.0",
   "description": "Moves the 'Read Aloud' button to the main actions bar on ChatGPT.",
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage"
   ],
   "action": {

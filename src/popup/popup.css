@@ -15,6 +15,11 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-top: 10px;
+}
+
+.row:first-of-type {
+  margin-top: 0;
 }
 
 .row label {
@@ -22,7 +27,7 @@ h1 {
   cursor: pointer;
 }
 
-.row label[for="autoPlayToggle"] {
+.row label:first-child {
   flex: 1;
 }
 
@@ -68,6 +73,12 @@ input:checked + .slider {
 
 input:checked + .slider::before {
   transform: translateX(20px);
+}
+
+.status {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #b3261e;
 }
 
 footer {

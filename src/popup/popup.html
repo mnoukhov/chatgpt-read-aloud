@@ -14,8 +14,16 @@
       <span class="slider"></span>
     </label>
   </div>
+  <div class="row">
+    <label for="hideFeedbackToggle">Hide feedback buttons</label>
+    <label class="switch" aria-label="Hide feedback buttons toggle">
+      <input type="checkbox" id="hideFeedbackToggle" />
+      <span class="slider"></span>
+    </label>
+  </div>
+  <p class="status" id="statusMessage" hidden></p>
   <footer>
-    Toggle to start playback automatically when a response is ready.
+    Choose what ChatGPT reads and what stays visible.
   </footer>
   <script src="popup.js"></script>
 </body>
