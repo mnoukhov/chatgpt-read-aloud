@@ -1,17 +1,17 @@
 # chatgpt-read-aloud
 
-Restores and enhances ChatGPT's **Read Aloud** experience: it injects a visible
-speaker button next to every assistant response, reuses ChatGPT's native
-playback, and can optionally auto-start narration as soon as a reply is ready.
+A Firefox userscript that restores and enhances ChatGPT's **Read Aloud**
+experience: it injects a visible speaker button next to every assistant
+response, reuses ChatGPT's native playback, and can optionally auto-start
+narration as soon as a reply is ready.
 
-This repo packages that behavior as a **Firefox userscript** (Tampermonkey /
-Violentmonkey) so there's no add-on signing, no packaging, and one-click
-install. The original **Chrome extension** source is still included under
-[`src/`](./src).
+Running as a userscript (via Tampermonkey / Violentmonkey) means there's no
+add-on signing, no packaging, and one-click install that persists across
+restarts.
 
-> Based on [`3choff/ChatGPT_ReadAloud`](https://github.com/3choff/ChatGPT_ReadAloud)
-> — this repo ports that Chrome extension to a Firefox-friendly userscript and
-> keeps the extension source alongside it.
+> Based on [`3choff/ChatGPT_ReadAloud`](https://github.com/3choff/ChatGPT_ReadAloud),
+> a Chrome extension. This repo ports that behavior to a Firefox-friendly
+> userscript.
 
 ## Features
 - **Speaker shortcut** – Adds a visible read-aloud button for every ChatGPT message, avoiding the hidden overflow menu.
@@ -20,20 +20,19 @@ install. The original **Chrome extension** source is still included under
 - **Auto-play toggle** – Choose whether new assistant responses start reading automatically.
 - **Hide feedback buttons** – Optionally hide the thumbs up/down buttons.
 
-## Install (Firefox — userscript)
+## Install
 
 1. Install a userscript manager from Firefox Add-ons:
    - [Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/) (recommended), or
    - [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/)
-2. Open the raw userscript:
-   [`userscript/chatgpt-read-aloud.user.js`](./userscript/chatgpt-read-aloud.user.js)
-   (use GitHub's **Raw** button). Tampermonkey detects the `.user.js` file and
-   shows an install prompt.
+2. Open the raw userscript — the manager detects the `.user.js` file and shows
+   an install prompt:
+   **[chatgpt-read-aloud.user.js](https://github.com/mnoukhov/chatgpt-read-aloud/raw/main/chatgpt-read-aloud.user.js)**
 3. Click **Install**.
 4. Open [chatgpt.com](https://chatgpt.com) and start a conversation. A speaker
    button appears next to each assistant response — click it to play or stop.
 
-### Settings (Tampermonkey menu)
+## Settings
 
 Userscripts have no toolbar popup, so the toggles live in the userscript
 manager's menu. While on ChatGPT, click the **Tampermonkey** toolbar icon:
@@ -44,25 +43,18 @@ manager's menu. While on ChatGPT, click the **Tampermonkey** toolbar icon:
 The check/empty box shows the current state; clicking flips it. Choices are
 saved with `GM_setValue` and remembered next time.
 
-## Install (Chrome — extension)
+## Updating
 
-The original extension still works if you prefer Chrome:
-
-1. Clone or download this repository.
-2. Go to `chrome://extensions` and enable **Developer mode**.
-3. Click **Load unpacked** and select the project directory (it loads
-   [`manifest.json`](./manifest.json) and [`src/`](./src)).
-
-In Chrome, the same settings appear in the extension's toolbar popup instead of
-the Tampermonkey menu.
+The script declares `@updateURL`/`@downloadURL`, so Tampermonkey/Violentmonkey
+will auto-update it from this repo. You can also force a check from the manager,
+or re-open the raw file to reinstall.
 
 ## Development notes
-- Userscript logic lives in [`userscript/chatgpt-read-aloud.user.js`](./userscript/chatgpt-read-aloud.user.js);
-  the Chrome content script is [`src/content/content.js`](./src/content/content.js).
-  They share the same DOM selectors and timing — if ChatGPT changes its markup,
-  update the selectors in both.
-- The speaker SVG path used by the script lives in the content/userscript files.
-- Chrome icons are declared in `manifest.json`; PNGs are under `src/assets/icons/`.
+
+All logic lives in [`chatgpt-read-aloud.user.js`](./chatgpt-read-aloud.user.js).
+It relies on ChatGPT's DOM (the `aria-label="More actions"` button and the
+`div[role="menuitem"]` entries) — if ChatGPT changes its markup, update the
+selectors and timing there.
 
 ## Credits
 

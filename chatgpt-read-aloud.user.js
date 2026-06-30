@@ -1,3 +1,21 @@
+// ==UserScript==
+// @name         ChatGPT Read Aloud
+// @namespace    https://github.com/mnoukhov/ChatGPT_ReadAloud
+// @version      1.0
+// @description  Adds a visible Read Aloud button to every ChatGPT response and can auto-start narration. Userscript port of the Chrome extension, for Firefox (Tampermonkey/Violentmonkey).
+// @author       Michael Noukhovitch
+// @match        https://chat.openai.com/*
+// @match        https://chatgpt.com/*
+// @downloadURL  https://github.com/mnoukhov/chatgpt-read-aloud/raw/main/chatgpt-read-aloud.user.js
+// @updateURL    https://github.com/mnoukhov/chatgpt-read-aloud/raw/main/chatgpt-read-aloud.user.js
+// @run-at       document-idle
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
+// @noframes
+// ==/UserScript==
+
 (function () {
   "use strict";
 
@@ -6,7 +24,6 @@
   const pauseSVG = '<path d="M10 3C6.13401 3 3 6.13401 3 10C3 13.866 6.13401 17 10 17C13.866 17 17 13.866 17 10C17 6.13401 13.866 3 10 3ZM9 13H7V7H9V13ZM13 13H11V7H13V13Z"></path>';
   const STORAGE_KEY = 'autoPlayEnabled';
   const HIDE_FEEDBACK_STORAGE_KEY = 'hideFeedbackButtonsEnabled';
-  const hasStorage = typeof chrome !== 'undefined' && chrome?.storage?.sync;
   let autoPlayEnabled = false;
   let autoPlayArmedForNewResponses = false;
   let hideFeedbackButtonsEnabled = false;
@@ -119,26 +136,81 @@
     }
   }
 
-  function initializeAutoPlaySetting() {
-    if (!hasStorage) {
-      autoPlayEnabled = false;
+  // --- Settings via the userscript manager (Tampermonkey/Violentmonkey) ---
+  // The Chrome extension used a toolbar popup with chrome.storage.sync. In a
+  // userscript there is no popup, so persistent settings are read/written with
+  // GM_getValue/GM_setValue and toggled from the userscript manager's menu.
+  const hasGM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
+
+  function readSetting(key, defaultValue) {
+    if (!hasGM) {
+      return defaultValue;
+    }
+    try {
+      return GM_getValue(key, defaultValue);
+    } catch (error) {
+      return defaultValue;
+    }
+  }
+
+  function writeSetting(key, value) {
+    if (!hasGM) {
+      return;
+    }
+    try {
+      GM_setValue(key, value);
+    } catch (error) {
+      /* ignore storage errors */
+    }
+  }
+
+  const menuCommandIds = [];
+
+  function registerMenuCommands() {
+    if (typeof GM_registerMenuCommand !== 'function') {
       return;
     }
 
-    chrome.storage.sync.get({ [STORAGE_KEY]: false, [HIDE_FEEDBACK_STORAGE_KEY]: false }, (result) => {
-      setAutoPlayEnabled(result[STORAGE_KEY]);
-      setHideFeedbackButtonsEnabled(result[HIDE_FEEDBACK_STORAGE_KEY]);
+    // Re-register from scratch so labels reflect the current state.
+    if (typeof GM_unregisterMenuCommand === 'function') {
+      while (menuCommandIds.length) {
+        try {
+          GM_unregisterMenuCommand(menuCommandIds.pop());
+        } catch (error) {
+          /* some managers do not support unregister; ignore */
+        }
+      }
+    }
+
+    const autoPlayLabel = `${autoPlayEnabled ? '✅' : '⬜'} Auto-play new responses`;
+    const hideFeedbackLabel = `${hideFeedbackButtonsEnabled ? '✅' : '⬜'} Hide feedback buttons`;
+
+    const autoPlayId = GM_registerMenuCommand(autoPlayLabel, () => {
+      const next = !autoPlayEnabled;
+      setAutoPlayEnabled(next);
+      writeSetting(STORAGE_KEY, next);
+      registerMenuCommands();
     });
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'sync' && Object.prototype.hasOwnProperty.call(changes, STORAGE_KEY)) {
-        setAutoPlayEnabled(changes[STORAGE_KEY].newValue);
-      }
-
-      if (areaName === 'sync' && Object.prototype.hasOwnProperty.call(changes, HIDE_FEEDBACK_STORAGE_KEY)) {
-        setHideFeedbackButtonsEnabled(changes[HIDE_FEEDBACK_STORAGE_KEY].newValue);
-      }
+    const hideFeedbackId = GM_registerMenuCommand(hideFeedbackLabel, () => {
+      const next = !hideFeedbackButtonsEnabled;
+      setHideFeedbackButtonsEnabled(next);
+      writeSetting(HIDE_FEEDBACK_STORAGE_KEY, next);
+      registerMenuCommands();
     });
+
+    if (autoPlayId !== undefined) {
+      menuCommandIds.push(autoPlayId);
+    }
+    if (hideFeedbackId !== undefined) {
+      menuCommandIds.push(hideFeedbackId);
+    }
+  }
+
+  function initializeAutoPlaySetting() {
+    setAutoPlayEnabled(readSetting(STORAGE_KEY, false));
+    setHideFeedbackButtonsEnabled(readSetting(HIDE_FEEDBACK_STORAGE_KEY, false));
+    registerMenuCommands();
   }
 
   function isInComposer(target) {
@@ -222,7 +294,7 @@
       proxyButton.dataset.readAloudProxy = 'true';
       proxyButton.dataset.autoPlayTriggered = 'false';
       proxyButton.dataset.autoPlayEligible = autoPlayArmedForNewResponses ? 'true' : 'false';
-      
+
       const icon = proxyButton.querySelector('svg');
       if (icon) {
         icon.innerHTML = readAloudSVG;
@@ -258,7 +330,7 @@
 
           if (currentState === 'Read Aloud') {
             openMenu();
-            
+
             requestAnimationFrame(() => {
               scheduleMenuHide();
               setTimeout(scheduleMenuHide, 50);
@@ -290,7 +362,7 @@
             setTimeout(() => clickReadAloudWhenReady(5), 300);
           } else {
             openMenu();
-            
+
             requestAnimationFrame(() => {
               scheduleMenuHide();
               setTimeout(scheduleMenuHide, 50);
@@ -358,13 +430,6 @@
       armAutoPlayForNewResponses();
     }
   }, true);
-
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === 'toggleAutoPlay') {
-      setAutoPlayEnabled(request.enabled);
-    }
-    setTimeout(hideFeedbackButtons, 500);
-  });
 
   observer.observe(document.body, {
     childList: true,
