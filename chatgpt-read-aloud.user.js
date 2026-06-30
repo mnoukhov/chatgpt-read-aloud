@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Read Aloud
 // @namespace    https://github.com/mnoukhov/ChatGPT_ReadAloud
-// @version      1.0
+// @version      1.1
 // @description  Adds a visible Read Aloud button to every ChatGPT response and can auto-start narration. Userscript port of the Chrome extension, for Firefox (Tampermonkey/Violentmonkey).
 // @author       Michael Noukhovitch
 // @match        https://chat.openai.com/*
@@ -281,6 +281,49 @@
     };
   }
 
+  // ChatGPT's overflow-menu items no longer expose aria-label="Read aloud"/"Stop".
+  // They are now <div role="menuitem"> entries identified by data-testid and the
+  // visible label text (e.g. data-testid="voice-play-turn-action-button" with a
+  // ".truncate" child reading "Read aloud"). Match on those instead.
+  function getMenuItemLabel(item) {
+    if (!item) {
+      return '';
+    }
+    const labelNode = item.querySelector('.truncate');
+    const text = (labelNode ? labelNode.textContent : item.textContent) || '';
+    return text.trim().toLowerCase();
+  }
+
+  function findReadAloudMenuItem() {
+    const items = document.querySelectorAll('div[role="menuitem"]');
+    let testidMatch = null;
+    for (const item of items) {
+      if (getMenuItemLabel(item) === 'read aloud') {
+        return item;
+      }
+      if ((item.getAttribute('data-testid') || '') === 'voice-play-turn-action-button') {
+        testidMatch = item;
+      }
+    }
+    return testidMatch;
+  }
+
+  function findStopMenuItem() {
+    const items = document.querySelectorAll('div[role="menuitem"]');
+    let testidMatch = null;
+    for (const item of items) {
+      const label = getMenuItemLabel(item);
+      if (label === 'stop' || label === 'stop reading') {
+        return item;
+      }
+      const testid = item.getAttribute('data-testid') || '';
+      if (testid.includes('voice') && testid.includes('stop')) {
+        testidMatch = item;
+      }
+    }
+    return testidMatch;
+  }
+
   function createProxyButton() {
     const moreActionsButtons = document.querySelectorAll('button[aria-label="More actions"]:not([data-proxy-added])');
 
@@ -338,9 +381,7 @@
 
             const clickReadAloudWhenReady = (attemptsRemaining) => {
               scheduleMenuHide();
-              // Old selector kept for rollback reference; clicking "Loading" can mark playback as stopped/started incorrectly.
-              // const realReadAloudButton = document.querySelector('div[role="menuitem"][aria-label="Read aloud"], div[role="menuitem"][aria-label="Loading"]');
-              const realReadAloudButton = document.querySelector('div[role="menuitem"][aria-label="Read aloud"]');
+              const realReadAloudButton = findReadAloudMenuItem();
               if (realReadAloudButton) {
                 realReadAloudButton.click();
                 proxyButton.setAttribute('aria-label', 'Stop');
@@ -370,7 +411,7 @@
 
             setTimeout(() => {
               scheduleMenuHide();
-              const stopButton = document.querySelector('div[role="menuitem"][aria-label="Stop"]');
+              const stopButton = findStopMenuItem();
               if (stopButton) {
                 stopButton.click();
                 resetProxyButtonAppearance(proxyButton);
