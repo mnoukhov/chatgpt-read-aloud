@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Read Aloud
 // @namespace    https://github.com/mnoukhov/ChatGPT_ReadAloud
-// @version      1.1
+// @version      1.2
 // @description  Adds a visible Read Aloud button to every ChatGPT response and can auto-start narration. Userscript port of the Chrome extension, for Firefox (Tampermonkey/Violentmonkey).
 // @author       Michael Noukhovitch
 // @match        https://chat.openai.com/*
@@ -347,15 +347,10 @@
         proxyButton.addEventListener('click', (event) => {
           event.stopPropagation();
 
-          const currentState = proxyButton.getAttribute('aria-label');
+          const isPlaying = proxyButton.getAttribute('aria-label') === 'Stop';
           let restoreMenuStyles = null;
 
-          const openMenu = () => {
-            specificMoreActionsButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
-            specificMoreActionsButton.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
-          };
-
-          const scheduleMenuHide = () => {
+          const hideMenu = () => {
             if (!restoreMenuStyles) {
               const restore = temporarilyHideMenu();
               if (typeof restore === 'function') {
@@ -364,65 +359,45 @@
             }
           };
 
-          const runRestoreMenu = () => {
+          const restoreMenu = () => {
             if (restoreMenuStyles) {
               restoreMenuStyles();
               restoreMenuStyles = null;
             }
           };
 
-          if (currentState === 'Read Aloud') {
-            openMenu();
+          // Open ChatGPT's native overflow menu with a plain .click(). The old
+          // synthetic PointerEvent approach throws/does nothing inside Firefox's
+          // userscript sandbox; .click() is what the working console test used.
+          specificMoreActionsButton.click();
+          requestAnimationFrame(hideMenu);
+          setTimeout(hideMenu, 30);
 
-            requestAnimationFrame(() => {
-              scheduleMenuHide();
-              setTimeout(scheduleMenuHide, 50);
-            });
-
-            const clickReadAloudWhenReady = (attemptsRemaining) => {
-              scheduleMenuHide();
-              const realReadAloudButton = findReadAloudMenuItem();
-              if (realReadAloudButton) {
-                realReadAloudButton.click();
+          const selectMenuItem = (attemptsRemaining) => {
+            hideMenu();
+            const item = isPlaying ? findStopMenuItem() : findReadAloudMenuItem();
+            if (item) {
+              item.click();
+              if (isPlaying) {
+                resetProxyButtonAppearance(proxyButton);
+                proxyButton.dataset.autoPlayEligible = 'false';
+              } else {
                 proxyButton.setAttribute('aria-label', 'Stop');
                 const icon = proxyButton.querySelector('svg');
                 if (icon) {
                   icon.innerHTML = stopSVG;
                 }
-                openMenu();
-                setTimeout(runRestoreMenu, 100);
-              } else {
-                if (attemptsRemaining > 0) {
-                  setTimeout(() => clickReadAloudWhenReady(attemptsRemaining - 1), 200);
-                } else {
-                  runRestoreMenu();
-                }
               }
-            };
+              // Selecting an item closes the Radix menu on its own.
+              setTimeout(restoreMenu, 100);
+            } else if (attemptsRemaining > 0) {
+              setTimeout(() => selectMenuItem(attemptsRemaining - 1), 150);
+            } else {
+              restoreMenu();
+            }
+          };
 
-            setTimeout(() => clickReadAloudWhenReady(5), 300);
-          } else {
-            openMenu();
-
-            requestAnimationFrame(() => {
-              scheduleMenuHide();
-              setTimeout(scheduleMenuHide, 50);
-            });
-
-            setTimeout(() => {
-              scheduleMenuHide();
-              const stopButton = findStopMenuItem();
-              if (stopButton) {
-                stopButton.click();
-                resetProxyButtonAppearance(proxyButton);
-                proxyButton.dataset.autoPlayEligible = 'false';
-                openMenu();
-                setTimeout(runRestoreMenu, 100);
-              } else {
-                runRestoreMenu();
-              }
-            }, 300);
-          }
+          setTimeout(() => selectMenuItem(6), 120);
         });
       })(moreActionsButton);
 
